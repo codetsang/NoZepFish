@@ -1,6 +1,6 @@
 """
-Zep图谱记忆更新服务
-将模拟中的Agent活动动态更新到Zep图谱中
+图谱记忆更新服务（Neo4j 本地）
+将模拟中的 Agent 活动通过 LLM 抽取后更新到 Neo4j 图谱
 """
 
 import os
@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
+from . import neo4j_graph
+from .graph_extractor import extract_entities_and_relations
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
 
@@ -230,19 +230,14 @@ class ZepGraphMemoryUpdater:
     
     def __init__(self, graph_id: str, api_key: Optional[str] = None):
         """
-        初始化更新器
-        
+        初始化更新器（Neo4j 本地）
         Args:
-            graph_id: Zep图谱ID
-            api_key: Zep API Key（可选，默认从配置读取）
+            graph_id: 图谱ID
+            api_key: 保留参数（兼容旧接口）
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        if not Config.NEO4J_PASSWORD:
+            raise ValueError("NEO4J_PASSWORD未配置")
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -389,41 +384,32 @@ class ZepGraphMemoryUpdater:
     
     def _send_batch_activities(self, activities: List[AgentActivity], platform: str):
         """
-        批量发送活动到Zep图谱（合并为一条文本）
-        
-        Args:
-            activities: Agent活动列表
-            platform: 平台名称
+        批量发送活动到 Neo4j 图谱：合并为文本 -> LLM 抽取实体/关系 -> 写入图谱
         """
         if not activities:
             return
-        
-        # 将多条活动合并为一条文本，用换行分隔
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
-        
-        # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
+                ontology = neo4j_graph.get_ontology(self.graph_id) or {}
+                data = extract_entities_and_relations(combined_text, ontology)
+                neo4j_graph.add_extracted(
+                    self.graph_id,
+                    data.get("entities") or [],
+                    data.get("relations") or [],
                 )
-                
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
                 logger.info(f"成功批量发送 {len(activities)} 条{display_name}活动到图谱 {self.graph_id}")
-                logger.debug(f"批量内容预览: {combined_text[:200]}...")
                 return
-                
             except Exception as e:
                 if attempt < self.MAX_RETRIES - 1:
-                    logger.warning(f"批量发送到Zep失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    logger.warning(f"批量发送到图谱失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                 else:
-                    logger.error(f"批量发送到Zep失败，已重试{self.MAX_RETRIES}次: {e}")
+                    logger.error(f"批量发送到图谱失败，已重试{self.MAX_RETRIES}次: {e}")
                     self._failed_count += 1
     
     def _flush_remaining(self):

@@ -122,9 +122,11 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
-# Zep Cloud 配置
-# 每月免费额度即可支撑简单使用：https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Neo4j 图数据库（本地化，替代 Zep，仅大模型走阿里百炼）
+# Docker 部署时 NEO4J_URI=bolt://neo4j:7687
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_neo4j_password
 ```
 
 #### 2. 安装依赖
@@ -164,17 +166,26 @@ npm run frontend  # 仅启动前端
 
 ### 二、Docker 部署
 
-```bash
-# 1. 配置环境变量（同源码部署）
-cp .env.example .env
+本项目使用 **Neo4j 本地图数据库**（替代 Zep），仅大模型调用阿里百炼，图谱与检索全部本地化。
 
-# 2. 拉取镜像并启动
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env，至少设置：LLM_API_KEY、LLM_BASE_URL、LLM_MODEL_NAME、NEO4J_PASSWORD
+
+# 2. 启动（会同时启动 Neo4j + 应用）
 docker compose up -d
 ```
 
-默认会读取根目录下的 `.env`，并映射端口 `3000（前端）/5001（后端）`
+- 应用依赖 Neo4j，启动顺序已配置。
+- 端口：前端 3000、后端 5001、Neo4j 7474（浏览器）/ 7687（Bolt）。
+- 若使用预构建镜像，需确保镜像内已去掉 Zep、改用 Neo4j；否则在项目根目录执行 `docker compose build` 后 `docker compose up -d`。
 
-> 在 `docker-compose.yml` 中已通过注释提供加速镜像地址，可按需替换
+**为何重新拉代码后仍有推演记录？**  
+推演记录存在**本地持久化目录** `backend/uploads/`（项目、模拟、报告等），该目录在 `.gitignore` 中，拉取代码不会删除。Docker 部署时若挂载了 `./backend/uploads`，宿主机该目录下的旧数据也会被保留。  
+若要清空推演记录、从零开始：
+- **宿主机**：删除 `backend/uploads` 下的 `projects`、`simulations`、`reports` 三个目录，或执行 `./scripts/clear-local-data.sh`（按提示确认）。
+- **Docker**：若希望连同 Neo4j 图数据一起清空，可执行 `docker compose down -v`（会删除 Neo4j 数据卷），再删除宿主机上的 `backend/uploads/projects`、`simulations`、`reports` 后重新 `docker compose up -d`。
 
 ## 📬 更多交流
 

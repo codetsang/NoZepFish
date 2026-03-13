@@ -1,14 +1,37 @@
 services:
+  neo4j:
+    image: neo4j:5.22.0
+    container_name: nozepfish-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j123}
+    # 宿主机端口 7475/7688，避免与本地已有 Neo4j 冲突；可按需改回 7474/7687
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
   mirofish:
-    image: ghcr.io/666ghj/mirofish:latest
-    # 加速镜像（如拉取缓慢可替换上方地址）
-    # image: ghcr.nju.edu.cn/666ghj/mirofish:latest
-    container_name: mirofish
+    # 必须本地构建（本仓库已改为 Neo4j，不再使用 Zep）
+    build: .
+    image: nozepfish:latest
+    container_name: nozepfish
     env_file:
       - .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4j123}
+    # 宿主机端口 3100/5101，避免与占用 3000/5001 的其他服务冲突；可按需改回 3000/5001
     ports:
-      - "3000:3000"
-      - "5001:5001"
+      - "3100:3000"
+      - "5101:5001"
+    depends_on:
+      - neo4j
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads
+
+volumes:
+  neo4j_data:

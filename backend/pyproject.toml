@@ -16,8 +16,8 @@ dependencies = [
     # LLM 相关
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.13.0",
+    # Neo4j 图数据库（本地化替代 Zep）
+    "neo4j>=5.0.0",
     
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",

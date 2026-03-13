@@ -9,6 +9,9 @@ from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
+from ..utils.logger import get_logger
+
+logger = get_logger("mirofish.llm")
 
 
 class LLMClient:
@@ -60,11 +63,21 @@ class LLMClient:
         
         if response_format:
             kwargs["response_format"] = response_format
-        
+
+        user_preview = ""
+        for m in messages:
+            if m.get("role") == "user" and m.get("content"):
+                user_preview = (m["content"][:100] + "…") if len(m["content"]) > 100 else m["content"]
+                break
+        logger.info(f"LLM 请求 model={self.model} messages={len(messages)} 首条user: {user_preview}")
+
         response = self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        usage = getattr(response, "usage", None)
+        tokens = f" usage={usage.prompt_tokens}+{usage.completion_tokens}" if usage else ""
+        logger.info(f"LLM 响应 长度={len(content)}{tokens}")
         return content
     
     def chat_json(
